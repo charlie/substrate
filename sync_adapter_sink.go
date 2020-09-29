@@ -116,7 +116,11 @@ func (spa *synchronousMessageSinkAdapter) loop() {
 
 	// Wait for sink and loop to terminate and send close error tp closed channel
 	if sinkErr := rg.Wait(); sinkErr == nil || sinkErr == context.Canceled {
-		println("rg.Wait() done 1, sinkErr:", sinkErr.Error())
+		errmsg := "<nil>"
+		if sinkErr != nil {
+			errmsg = sinkErr.Error()
+		}
+		println("rg.Wait() done 1, sinkErr:", errmsg)
 		spa.closeErr <- spa.aprod.Close()
 	} else {
 		println("rg.Wait() done 2, sinkErr:", sinkErr.Error())
