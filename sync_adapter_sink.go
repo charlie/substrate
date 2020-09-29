@@ -62,11 +62,14 @@ func (spa *synchronousMessageSinkAdapter) loop() {
 		seq := 0
 		needAcks := make(map[int]*produceReq)
 		defer func() {
+			println("rg2 in defer func")
 			// Send error to all waiting publish requests before shutting down
-			for _, req := range needAcks {
+			for seq, req := range needAcks {
 				select {
 				case <-req.ctx.Done():
+					println("rg2 defer: context done")
 				case req.done <- ErrSinkClosedOrFailedDuringSend:
+					println("rg2 defer: sending ErrSinkClosedOrFailed to req.done of msg", seq)
 				}
 			}
 		}()
@@ -74,18 +77,23 @@ func (spa *synchronousMessageSinkAdapter) loop() {
 		for {
 			select {
 			case <-ctx.Done():
+				println("rg2: context done 1")
 				return nil
 			case pr := <-spa.toProduce:
 				seq++
 				needAcks[seq] = pr
 				select {
 				case <-ctx.Done():
+					println("rg2: context done 2")
 					return nil
 				case toSend <- seqMessage{seq: seq, Message: pr.m}:
+					println("rg2: sent message", seq)
 				case <-spa.closeReq:
+					println("rg2: got closereq 2")
 					return nil
 				}
 			case ack := <-acks:
+				println("rg2: got ack")
 				msg, ok := ack.(seqMessage)
 				if !ok {
 					panic(fmt.Sprintf("unexpected message: %s", ack))
@@ -100,6 +108,7 @@ func (spa *synchronousMessageSinkAdapter) loop() {
 				close(req.done)
 				delete(needAcks, msg.seq)
 			case <-spa.closeReq:
+				println("rg2: got closereq 1")
 				return nil
 			}
 		}
@@ -107,9 +116,12 @@ func (spa *synchronousMessageSinkAdapter) loop() {
 
 	// Wait for sink and loop to terminate and send close error tp closed channel
 	if sinkErr := rg.Wait(); sinkErr == nil || sinkErr == context.Canceled {
+		println("rg.Wait() done 1, sinkErr:", sinkErr)
 		spa.closeErr <- spa.aprod.Close()
 	} else {
+		println("rg.Wait() done 2, sinkErr:", sinkErr)
 		if err := spa.aprod.Close(); err != nil {
+			println("rg.Wait() done close err:", err)
 			spa.closeErr <- errors.Errorf("sink error: %v sink close error: %v", sinkErr, err)
 		} else {
 			spa.closeErr <- sinkErr
@@ -120,6 +132,7 @@ func (spa *synchronousMessageSinkAdapter) loop() {
 }
 
 func (spa *synchronousMessageSinkAdapter) Close() error {
+	println("smsa.Close() called")
 	select {
 	case err, ok := <-spa.closeErr:
 		if ok {
@@ -144,13 +157,17 @@ func (spa *synchronousMessageSinkAdapter) PublishMessage(ctx context.Context, m 
 	case spa.toProduce <- pr:
 		select {
 		case err := <-pr.done:
+			println("PM: produceReq.done err:", err)
 			return err
 		case <-ctx.Done():
+			println("PM: context done")
 			return ctx.Err()
 		}
 	case <-spa.closed:
+		println("PM: closed was closed")
 		return ErrSinkAlreadyClosed
 	case <-ctx.Done():
+		println("PM: context done")
 		return ctx.Err()
 	}
 }
